@@ -51,9 +51,8 @@ target_link_libraries(audio_spectrum_analyzer
 
 # Add the standard include files to the build
 target_include_directories(audio_spectrum_analyzer PRIVATE
-  ${CMAKE_CURRENT_LIST_DIR}
-  C:/Users/K_frelih/Documents/akustika/CMSISDSP/CMSIS-DSP/Include
-  C:/Users/K_frelih/Documents/akustika/CMSISDSP/CMSIS_6/CMSIS/Core/Include
+${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/CMSIS-DSP/Include
+${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/CMSIS_6/CMSIS/Core/Include
 )
 
 # Add any user requested libraries
@@ -66,7 +65,7 @@ target_link_libraries(audio_spectrum_analyzer
         hardware_adc
         ili9341
         gfx
-        C:/Users/K_frelih/Documents/akustika/CMSISDSP/build/bin_dsp/libCMSISDSP.a
+        ${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/build/bin_dsp/libCMSISDSP.a 
         )
 
 pico_add_extra_outputs(audio_spectrum_analyzer)
