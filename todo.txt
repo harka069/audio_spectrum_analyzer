@@ -1,0 +1,6 @@
+ADC timer callback on how much? ->ADC needs ~23 us for  one sample at 44100 Hz -> 0.023s for 1024 samples -> 41.66 times/s is max
+DMA chanel directly into buffer for fft
+LCD refresh rate - TBD, synced with ADC timer callback - do i get any feedback from lcd - datasheet?
+
+ADC on separate core
+invsetigate preformance using systick https://learn.arm.com/learning-paths/microcontrollers/rpi_pico/perf/
