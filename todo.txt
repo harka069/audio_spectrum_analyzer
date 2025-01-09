@@ -1,6 +1,14 @@
-ADC timer callback on how much? ->ADC needs ~23 us for  one sample at 44100 Hz -> 0.023s for 1024 samples -> 41.66 times/s is max
+ADC timer naredi pravi callback 100ms? 
 DMA chanel directly into buffer for fft
 LCD refresh rate - TBD, synced with ADC timer callback - do i get any feedback from lcd - datasheet?
 
 ADC on separate core
 invsetigate preformance using systick https://learn.arm.com/learning-paths/microcontrollers/rpi_pico/perf/
+
+zapiski časov zmerjeno 9.1.: 
+ADC čas: ~23-24ms 
+GPX flush: ~39ms
+print time : 155 us
+
+z int32_t ADC_PERIOD = 100000 rabim 143ms za en krog flusha in adc zajema 
+
