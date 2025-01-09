@@ -27,14 +27,51 @@
 #define N_SAMPLES 1024
 #define ADCCLK 48000000.0
 #define Fsample 44100
+//timer config
+#define ALARM_NUM 0
+#define ALARM_IRQ timer_hardware_alarm_get_irq_num(timer_hw, ALARM_NUM)
 
+int32_t ADC_PERIOD = 3333;
 int16_t sample_buf[N_SAMPLES];
+int8_t display_bars[32]; // bars displayed on LCD
+//for measurig timer accuracy
+int64_t times[1000];
+uint16_t count = 0;
+bool printanje = 1;
+// Alarm interrupt handler
+static volatile bool alarm_fired;
 
-int8_t display_bars[32];
+static void alarm_irq(void) {
+    
+    hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM); // Clear the alarm irq 
+    /*
+    uint64_t absolutetime= time_us_64(); 
+    printf("alarm fired at abs time : %llu\n", absolutetime);
+    */
+    if (count<1000)
+    {
+        times[count]=time_us_64(); 
+        count++;
+        alarm_fired = true;
+        
+    }else
+    {
+        alarm_fired = false;
+    }
+
+    /* arm the alarm alarm_fired = false;*/
+     
+}
+static void alarm_in_us(uint32_t delay_us) {                                                  
+    hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM); // Enable the interrupt for our alarm (the timer outputs 4 alarm irqs) 
+    irq_set_exclusive_handler(ALARM_IRQ, alarm_irq); // Set irq handler for alarm irq
+    irq_set_enabled(ALARM_IRQ, true); // Enable the alarm irq
+    uint64_t target = timer_hw->timerawl + delay_us; // Enable interrupt in block and at processor Alarm is only 32 bits so if trying to delay more than that need to be careful and keep track of the upper bits
+    timer_hw->alarm[ALARM_NUM] = (uint32_t) target;  // Write the lower 32 bits of the target time to the alarm which will arm it
+}
 
 void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count) {
     adc_fifo_setup(true, false, 0, false, false);
-    adc_set_clkdiv(1089); //realvalue is 1089
     adc_run(true);
     for (size_t i = 0; i < count; i = i + 1)
         buf[i] = adc_fifo_get_blocking();
@@ -42,39 +79,44 @@ void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count) {
     adc_fifo_drain();
 }
 
-
 int main()
 {
-    stdio_init_all();
 
+    stdio_init_all();
 
     adc_gpio_init(28);
     adc_init();
     adc_select_input(ADC_CHANELL);
-    //adc_set_clkdiv(100000); //realvalue is 1089
-
+    adc_set_clkdiv(1089); 
+    
     //LCD init
     InitializeDisplay(BACKGROUND);
     GFX_setClearColor(ILI9341_WHITE);
     GFX_clearScreen();
     GFX_flush();   
-    
+    //timer variables 
+    alarm_fired = false; //sets the timer
+    alarm_in_us(ADC_PERIOD); 
+    //FFT variables
     static arm_rfft_instance_q15 fft_instance;
     static q15_t output[FFT_SIZE * 2];  // has to be twice FFT size
     static int16_t output_int[FFT_SIZE * 2];
-
     arm_status status;
     
     while (true) 
     {
-      
-        printf("\nStarting capture\n");
-        uint64_t start_adc_conversion = time_us_64();
-        adc_capture(sample_buf, N_SAMPLES);
-        uint64_t stop_adc_conversion = time_us_64();
-        uint32_t time_difference = stop_adc_conversion - start_adc_conversion;
-        printf("ADC conversion time: %u microseconds\n", time_difference);
         
+        while(alarm_fired){
+        // Wait for alarm to fire
+            //printf("\nStarting capture\n");
+            uint64_t start_adc_conversion = time_us_64();
+            adc_capture(sample_buf, N_SAMPLES);
+            uint64_t stop_adc_conversion = time_us_64();
+            uint32_t time_difference = stop_adc_conversion - start_adc_conversion;
+            //printf("ADC conversion time: %u microseconds\n", time_difference);
+            alarm_fired = false;
+            alarm_in_us(ADC_PERIOD);
+        }
 
         /************************************************************************************************************
         *   Internally input is downscaled by 2 for every stage to avoid saturations inside CFFT/CIFFT process.     *
@@ -87,7 +129,7 @@ int main()
         *   64
         *   128
         *********************************************************************************************************/
-
+       
         status = arm_rfft_init_q15(&fft_instance, 256 /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
         arm_rfft_q15(&fft_instance, (q15_t*)sample_buf, output);
         arm_abs_q15(output, output, FFT_SIZE);
@@ -109,7 +151,8 @@ int main()
             uint8_t percent = (uint8_t)((display_bars[j] * 100*4)/256); /*4 scaling?*/
             GFX_soundbar(j*10,240,9,240,ILI9341_BLUE,ILI9341_RED,percent);              
         }
-        GFX_flush();               
+        GFX_flush();  
+                    
     }
 }
 void InitializeDisplay(uint16_t color)
@@ -124,3 +167,4 @@ void InitializeDisplay(uint16_t color)
     GFX_setTextColor(FOREGROUND);
     GFX_clearScreen();
 }
+
