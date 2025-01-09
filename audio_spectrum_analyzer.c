@@ -31,7 +31,7 @@
 #define ALARM_NUM 0
 #define ALARM_IRQ timer_hardware_alarm_get_irq_num(timer_hw, ALARM_NUM)
 
-int32_t ADC_PERIOD = 3333;
+int32_t ADC_PERIOD = 100000; // every 100ms do 1024 ADC samples
 int16_t sample_buf[N_SAMPLES];
 int8_t display_bars[32]; // bars displayed on LCD
 //for measurig timer accuracy
@@ -103,19 +103,21 @@ int main()
     static int16_t output_int[FFT_SIZE * 2];
     arm_status status;
     
+
+    //time profiling
+    static uint64_t diff_adc=0;
+    static uint64_t diff_flush=0;
     while (true) 
-    {
-        
-        while(alarm_fired){
+    {        
+        if(alarm_fired == true){
         // Wait for alarm to fire
-            //printf("\nStarting capture\n");
             uint64_t start_adc_conversion = time_us_64();
             adc_capture(sample_buf, N_SAMPLES);
             uint64_t stop_adc_conversion = time_us_64();
-            uint32_t time_difference = stop_adc_conversion - start_adc_conversion;
+            diff_adc = stop_adc_conversion - start_adc_conversion;
             //printf("ADC conversion time: %u microseconds\n", time_difference);
             alarm_fired = false;
-            alarm_in_us(ADC_PERIOD);
+            alarm_in_us(ADC_PERIOD);            
         }
 
         /************************************************************************************************************
@@ -151,8 +153,14 @@ int main()
             uint8_t percent = (uint8_t)((display_bars[j] * 100*4)/256); /*4 scaling?*/
             GFX_soundbar(j*10,240,9,240,ILI9341_BLUE,ILI9341_RED,percent);              
         }
+
+        //time profiling
+        uint64_t start_flush = time_us_64();
         GFX_flush();  
-                    
+        uint64_t stop_flush = time_us_64();
+        diff_flush=stop_flush-start_flush;
+        //printf("ADC time:   %llu ms\nFLUSH time: %llu ms\n", diff_adc,diff_flush);
+        
     }
 }
 void InitializeDisplay(uint16_t color)
