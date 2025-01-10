@@ -33,6 +33,9 @@ project(audio_spectrum_analyzer C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+set(PICO_DEOPTIMIZED_DEBUG ON)
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 # Add executable. Default name is the project name, version 0.1
 add_executable(audio_spectrum_analyzer audio_spectrum_analyzer.c )
 
