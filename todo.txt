@@ -5,10 +5,13 @@ LCD refresh rate - TBD, synced with ADC timer callback - do i get any feedback f
 ADC on separate core
 invsetigate preformance using systick https://learn.arm.com/learning-paths/microcontrollers/rpi_pico/perf/
 
-zapiski časov zmerjeno 9.1.: 
-ADC čas: ~23-24ms 
-GPX flush: ~39ms
-print time : 155 us
+zapiski časov (worst casei) zmerjeno 9.1.: 
+ADC čas:                    ~24ms 
+updejt GPXFramebufferja:    ~21ms
+GPX flush:                  ~39ms
+1x printf time :            ~155 us
 
-z int32_t ADC_PERIOD = 100000 rabim 143ms za en krog flusha in adc zajema 
+cel main skupaj:            ~84ms
+
+
 
