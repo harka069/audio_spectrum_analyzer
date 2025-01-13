@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include <stdint.h>
 //high level libs
 #include "pico/stdlib.h"
 #include "pico/rand.h"  
@@ -24,7 +24,7 @@
 #define ADC_CHANELL 2
 
 #define FFT_SIZE 256
-#define N_SAMPLES 1024
+#define N_SAMPLES 256
 #define ADCCLK 48000000.0
 #define Fsample 44100
 //timer config
@@ -33,7 +33,7 @@
 
 int32_t ADC_PERIOD = 100000; // every 100ms do 1024 ADC samples
 int16_t sample_buf[N_SAMPLES];
-int8_t display_bars[32]; // bars displayed on LCD
+uint8_t display_bars[32]; // bars displayed on LCD
 
 //time profiling
 static uint64_t diff_adc=0;
@@ -41,7 +41,7 @@ static uint64_t diff_flush=0;
 static uint64_t diff_fft=0;
 
 //for measurig timer accuracy
-int64_t times[1000];
+uint64_t times[1000];
 uint16_t count = 0;
 bool printanje = 1;
 
@@ -51,15 +51,19 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
         timer_fired_on_100ms = true;
         return true;
     }
-void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count) {
+void __not_in_flash_func(adc_capture)(int16_t *buf, size_t count) {
     adc_fifo_setup(true, false, 0, false, false);
+    adc_set_clkdiv(1089); 
     adc_run(true);
     for (size_t i = 0; i < count; i = i + 1)
-        buf[i] = adc_fifo_get_blocking();
+    {   
+        uint16_t tmp = adc_fifo_get_blocking()*16; //12bit uint to 16bit int
+        buf[i]= (int16_t)(tmp-0x7fff);
+    }
     adc_run(false);
     adc_fifo_drain();
-}
-
+} 
+float buff=0.0;
 int main()
 {
     
@@ -68,11 +72,11 @@ int main()
     adc_gpio_init(28);
     adc_init();
     adc_select_input(ADC_CHANELL);
-    adc_set_clkdiv(1089); 
+    
     
     //LCD init
    
-    InitializeDisplay(BACKGROUND);
+    InitializeDisplay(ILI9341_WHITE);
     GFX_setClearColor(ILI9341_WHITE);
     GFX_clearScreen();
     GFX_flush();   
@@ -82,8 +86,8 @@ int main()
     
     //FFT variables
     static arm_rfft_instance_q15 fft_instance;
-    static q15_t output[FFT_SIZE * 2];  // has to be twice FFT size
-    static int16_t output_int[FFT_SIZE * 2];
+    static q15_t    output[FFT_SIZE * 2];  // has to be twice FFT size
+    static uint16_t  output_int[FFT_SIZE * 2];
     arm_status status;
 
    
@@ -110,35 +114,38 @@ int main()
         *   128
         *********************************************************************************************************/
         
-        status = arm_rfft_init_q15(&fft_instance, 256 /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
+
+       status = arm_rfft_init_q15(&fft_instance, 256 /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
         arm_rfft_q15(&fft_instance, (q15_t*)sample_buf, output);
+         
+        
         arm_abs_q15(output, output, FFT_SIZE);
         
-        
+       
         for(uint16_t i = 0; i < 511;i++)
         {
-            output_int[i]=output[i];
+            output_int[i]=(output[i]>>7);
         }
         for (uint8_t i = 0; i <= 31; i++) // Calculate bars on display -> 256 samples into 32 bars
         {
             uint16_t sum = 0;
-            for (uint8_t j = 0; j < 4; j++) {
-                sum =sum+ output_int[i * 4 + j];
+            for (uint8_t j = 0; j < 8; j++) {
+                sum = sum + output_int[i * 8 + j];
             }
-            sum=sum/4;
+            sum=sum/8;
             display_bars[i] = (uint8_t)sum;  
         }
         uint64_t start_soundbar = time_us_64();
         GFX_createFramebuf();
         for (int j = 0;j <= 31; j++)
         {             
-            uint8_t percent = (uint8_t)((display_bars[j] * 100*4)/256); /*4 scaling?*/
+            uint8_t percent = ((display_bars[j]*100)/255); /*4 scaling?*/
             GFX_soundbar(j*10,240,9,240,ILI9341_BLUE,ILI9341_RED,percent);              
         }       
         uint64_t stop_soundbar = time_us_64();
         
         diff_flush=stop_soundbar-start_soundbar;
-        printf("ADC time:   %llu ms\n soundbar time: %llu ms\nFFT time: %llu\n", diff_adc,diff_flush,diff_fft);
+        //printf("ADC time:   %llu ms\n soundbar time: %llu ms\nFFT time: %llu\n", diff_adc,diff_flush,diff_fft);
         GFX_flush();  
         GFX_destroyFramebuf();
         } 
@@ -151,10 +158,11 @@ void InitializeDisplay(uint16_t color)
     LCD_setPins(TFT_DC, TFT_CS, TFT_RST, TFT_SCLK, TFT_MOSI);
     LCD_initDisplay();
     LCD_setRotation(TFT_ROTATION);
-    //GFX_createFramebuf(); better to do it each time 
+    GFX_createFramebuf(); //better to do it each time 
     GFX_setClearColor(color);
     GFX_setTextBack(BACKGROUND);
     GFX_setTextColor(FOREGROUND);
     GFX_clearScreen();
+    GFX_destroyFramebuf();
 }
 
