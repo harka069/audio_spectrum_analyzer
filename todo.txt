@@ -1,11 +1,11 @@
-ADC timer naredi pravi callback 100ms? 
+ADC timer naredi pravi callback 100ms? -done
 DMA chanel directly into buffer for fft
 LCD refresh rate - TBD, synced with ADC timer callback - do i get any feedback from lcd - datasheet?
 
 ADC on separate core
 invsetigate preformance using systick https://learn.arm.com/learning-paths/microcontrollers/rpi_pico/perf/
 
-zapiski časov (worst casei) zmerjeno 9.1.: 
+zapiski časov (prbl) zmerjeno 9.1.: 
 ADC čas:                    ~24ms 
 updejt GPXFramebufferja:    ~21ms
 GPX flush:                  ~39ms
@@ -15,3 +15,4 @@ cel main skupaj:            ~84ms
 
 
 
+probaval nekej z dma.. ni šlo najbolje? 

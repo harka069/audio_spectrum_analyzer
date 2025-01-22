@@ -50,7 +50,7 @@ const uint8_t initcmd[] = {
 };
 
 #ifdef USE_DMA
-uint dma_tx;
+static uint dma_tx;
 dma_channel_config dma_cfg;
 void waitForDMA()
 {
