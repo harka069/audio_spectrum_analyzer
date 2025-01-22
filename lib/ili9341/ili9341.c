@@ -254,13 +254,13 @@ void LCD_WriteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *b
 						  bitmap,						// read address
 						  w * h,						// element count (each element is of size transfer_data_size)
 						  true);						// start asap
-	waitForDMA();
+	//waitForDMA(); //for testing
 #else
 
 	spi_write16_blocking(ili9341_spi, bitmap, w * h);
 #endif
 
-	ILI9341_DeSelect();
+	//ILI9341_DeSelect();//for testing
 }
 
 void LCD_WritePixel(int x, int y, uint16_t col)
@@ -271,4 +271,8 @@ void LCD_WritePixel(int x, int y, uint16_t col)
 	spi_set_format(ili9341_spi, 16, SPI_CPOL_1, SPI_CPOL_1, SPI_MSB_FIRST);
 	spi_write16_blocking(ili9341_spi, &col, 1);
 	ILI9341_DeSelect();
+}
+bool LCD_DMA_Busy()
+{
+	return dma_channel_is_busy(dma_tx);
 }
