@@ -10,5 +10,15 @@ ADC čas: ~23-24ms
 GPX flush: ~39ms
 print time : 155 us
 
+zapiski časov zmerjeno 30.1.: 
+start of timer: 8876096 us
+ADC time:   23254 us
+flush time: 39331 us
+bar calc time: 20549 us
+
+start of timer: 8960266 us
+ADC time:   23241 us
+flush time: 39330 us
+
 z int32_t ADC_PERIOD = 100000 rabim 143ms za en krog flusha in adc zajema 
 

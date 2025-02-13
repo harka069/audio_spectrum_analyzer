@@ -5,7 +5,7 @@
 
 // Use DMA?
 #define USE_DMA 1
-#define SPI_FREQUNECY 40000000// 62500000
+#define SPI_FREQUNECY 62500000//  40000000
 
 #define MADCTL_MY 0x80  ///< Bottom to top
 #define MADCTL_MX 0x40  ///< Right to left
@@ -95,5 +95,9 @@ void LCD_setRotation(uint8_t m);
 
 void LCD_WritePixel(int x, int y, uint16_t col);
 void LCD_WriteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
+bool LCD_DMA_Busy();
+
+static uint dma_tx;
+void ILI9341_DeSelect();
 
 #endif

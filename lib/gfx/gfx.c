@@ -557,5 +557,5 @@ void GFX_soundbar(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color1,ui
     uint8_t first_block_height = (h*100*percent)/10000;
     uint8_t secnd_block_height = (h*100*(100-percent))/10000;
     GFX_fillRect(x,y,w,-first_block_height,color1);
-    GFX_fillRect(x,240-first_block_height-2,w,-secnd_block_height,color2);
+    GFX_fillRect(x,y-first_block_height-2,w,-secnd_block_height,color2);
 }
