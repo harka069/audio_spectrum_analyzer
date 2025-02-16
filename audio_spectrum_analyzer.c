@@ -1,5 +1,7 @@
 #include <stdio.h>
 
+#define ARM_MATH_CM0PLUS
+
 //high level libs
 #include "pico/stdlib.h"
 #include "pico/rand.h"  
@@ -12,9 +14,6 @@
 #include "hardware/uart.h"
 
 #include "tusb.h"
-
-
-
 //display libs
 #include "ili9341.h"
 #include "gfx.h"
@@ -22,40 +21,57 @@
 #include "DisplayTest.h"
 //fft library
 #include "arm_math.h"
+#include <math.h>
 //ADC config
 #define ADC_CHAN_MIC 0
 #define ADC_CHAN_AUX 2
 
 #define FFT_SIZE 256
-#define N_SAMPLES 1024
+#define N_ADC_SAMPLES 1024
 #define ADCCLK 48000000.0
-#define Fsample 44100
+
 //timer config
 #define ALARM_NUM 0
 #define ALARM_IRQ timer_hardware_alarm_get_irq_num(timer_hw, ALARM_NUM)
-#define period -45
+#define PERIOD -45
+
 int32_t ADC_PERIOD = 100000; // every 100ms do 1024 ADC samples
-int16_t sample_buf[N_SAMPLES];
+int16_t sample_buf[N_ADC_SAMPLES];
+
 int8_t display_bars[256]; // bars displayed on LCD
 
-static uint16_t display_bar_number = 32;
-static uint32_t bar_colour= ILI9341_BLUE;
-static uint32_t back_colour= ILI9341_RED;
+// global variables
+q15_t input_q15[N_ADC_SAMPLES];
+q15_t hanning_window_q15[N_ADC_SAMPLES];
+q15_t processed_window_q15[N_ADC_SAMPLES];
+float32_t hanning_window_test[N_ADC_SAMPLES];
+
+//device "settings"
+static uint16_t display_bar_number  = 32;
+static uint32_t bar_colour          = ILI9341_BLUE;
+static uint32_t back_colour         = ILI9341_RED;
+
+
 //time profiling
-static uint64_t diff_adc=0;
-static uint64_t diff_bars_calc=0;
-static uint64_t diff_flush=0;
-static uint64_t time_period=0;
-static uint64_t refresh=0;
+static uint64_t diff_adc        =0;
+static uint64_t diff_bars_calc  =0;
+static uint64_t diff_flush      =0;
+static uint64_t time_period     =0;
+static uint64_t refresh         =0;
 
-
-
+ //FFT variables
+arm_rfft_instance_q15 fft_instance;
+q15_t output[FFT_SIZE * 2];  // has to be twice FFT size
+arm_status status;
 
 volatile bool main_timer_fired = false; //sets the timer
 volatile bool lcd_dma_finished = true;
 
 // Function prototypes
+void hanning_window_init_q15(q15_t* hanning_window_q15, size_t size);
 void color_coding(char c, uint32_t *setting);
+void InitializeDisplay(uint16_t color);
+
 bool repeating_timer_callback(__unused struct repeating_timer *t) 
 {
     main_timer_fired = true;
@@ -82,7 +98,6 @@ void dma_handler()
 int main()
 {   
     stdio_init_all();
-
     adc_gpio_init(28);
     adc_init();
     adc_select_input(ADC_CHAN_MIC);
@@ -91,30 +106,40 @@ int main()
     //LCD init
     InitializeDisplay(BACKGROUND);  
 
+   
+
+    //test purpose sine generation
+    for (int i = 0; i < N_ADC_SAMPLES; i++) {
+        float32_t f = sin((2 * PI * 4000) / 44100 * i);  
+        arm_float_to_q15(&f, &input_q15[i], 1);
+    }
+
+    //Hann window generation - only preformed once
+    hanning_window_init_q15(hanning_window_q15, N_ADC_SAMPLES);
+    arm_mult_q15(hanning_window_q15,input_q15, processed_window_q15, N_ADC_SAMPLES);
+    
     //timer 
     struct repeating_timer timer;
-    add_repeating_timer_ms(period, repeating_timer_callback, NULL, &timer); 
-    
-    //DMA for LCD
-   
-    //FFT variables
-    static arm_rfft_instance_q15 fft_instance;
-    static q15_t output[FFT_SIZE * 2];  // has to be twice FFT size
-    static int16_t output_int[FFT_SIZE * 2];
-    arm_status status;
+    add_repeating_timer_ms(PERIOD, repeating_timer_callback, NULL, &timer); 
 
+    
     while (true) 
     {        
         if(main_timer_fired)
         {   
+            
             uint64_t start_adc_conversion = time_us_64();
-            adc_capture(sample_buf, N_SAMPLES);
+            adc_capture(sample_buf, N_ADC_SAMPLES);
             uint64_t stop_adc_conversion = time_us_64();
             diff_adc = stop_adc_conversion - start_adc_conversion;
             //start fft
+           
+
             status = arm_rfft_init_q15(&fft_instance, 256 /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
-            arm_rfft_q15(&fft_instance, (q15_t*)sample_buf, output);
-            arm_abs_q15(output, output, FFT_SIZE);
+            arm_rfft_q15(&fft_instance, processed_window_q15, output);
+            //arm_rfft_q15(&fft_instance, (q15_t*)sample_buf, output);
+            arm_cmplx_mag_q15(output, output, FFT_SIZE/2);
+            //arm_abs_q15(output, output, FFT_SIZE);
             output[0]=0;
             output[1]=0; //remove dc component
 
@@ -127,12 +152,14 @@ int main()
                 sum=sum/(256/display_bar_number);
                 display_bars[i] = (uint8_t)sum;  
             }
+
             uint64_t start_bars_calc = time_us_64();
             for (int j = 0;j < display_bar_number; j++)
             {             
                 uint8_t percent = (uint8_t)((display_bars[j])); /*4 scaling?  * 100*4)/256*/
                 GFX_soundbar(j*(256/display_bar_number),220,(256/display_bar_number),220,bar_colour,back_colour,percent);              
             }
+
             uint64_t stop_bars_calc = time_us_64();
             diff_bars_calc = stop_bars_calc - start_bars_calc;
             if(lcd_dma_finished == 1)     
@@ -297,3 +324,15 @@ void color_coding(char c,uint32_t *setting)
         break;
     }
 }
+
+void hanning_window_init_q15(q15_t* hanning_window_q15, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+      // calculate the Hanning Window value for i as a float32_t
+      float32_t f = 0.5 * (1.0 - arm_cos_f32(2 * PI * i / size ));
+  
+      // convert value for index i from float32_t to q15_t and store
+      // in window at position i
+      hanning_window_test[i]=f;
+      arm_float_to_q15(&f, &hanning_window_q15[i], 1);
+    }
+  }
