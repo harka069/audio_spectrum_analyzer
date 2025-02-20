@@ -36,12 +36,11 @@
 #define ALARM_IRQ timer_hardware_alarm_get_irq_num(timer_hw, ALARM_NUM)
 #define PERIOD -45
 
-int32_t ADC_PERIOD = 100000; // every 100ms do 1024 ADC samples
 int16_t sample_buf[N_ADC_SAMPLES];
 
 uint16_t display_bars[256]; // bars displayed on LCD
 uint16_t display_bars_max[256];
-const float conversion_factor = 3.3f / (1 << 12);
+
 //hann window variables
 q15_t input_q15[N_ADC_SAMPLES];
 q15_t hanning_window_q15[N_ADC_SAMPLES];
@@ -63,10 +62,11 @@ static uint64_t refresh         =0;
 //FFT variables
 arm_rfft_instance_q15 fft_instance;
 q15_t output[FFT_SIZE * 2];  // has to be twice FFT size
+q15_t fft_bins[FFT_SIZE/2]; 
 arm_status status;
 
 //bars
-uint8_t percent;
+uint32_t percent;
 uint8_t percent_max;
 uint8_t decay;
 volatile bool main_timer_fired = false; //sets the timer
@@ -77,6 +77,7 @@ void hanning_window_init_q15(q15_t* hanning_window_q15, size_t size);
 void color_coding(char c, uint32_t *setting);
 void InitializeDisplay(uint16_t color);
 void DisplayChartLines(uint16_t color);
+
 
 bool repeating_timer_callback(__unused struct repeating_timer *t) 
 {
@@ -101,15 +102,15 @@ void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count)
 static q15_t prev_input = 0;
 static q15_t prev_output = 0;
 
-void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count) {
+void __not_in_flash_func(adc_capture)(int16_t *buf, size_t count) {
     adc_fifo_setup(true, false, 0, false, false);
     adc_run(true);
 
     for (size_t i = 0; i < count; i++) {
         // Read raw ADC value (12-bit unsigned)
         uint16_t raw_adc = adc_fifo_get_blocking();  
-        q15_t input_q15 = (q15_t)(raw_adc - 2048) << 3; // Centering at 0
-
+        q15_t input_q15 = (q15_t)(raw_adc - 2048) << 4; // Centering at 0
+        
         //1st order HP FIR (DC removal): y[n] = x[n] - x[n-1] + alpha * y[n-1]
         int32_t temp = (int32_t)input_q15 - (int32_t)prev_input + 
                        ((int32_t)ALPHA_Q15 * (int32_t)prev_output >> 15);
@@ -133,17 +134,16 @@ int main()
     stdio_init_all();
     adc_gpio_init(28);
     adc_init();
-    adc_select_input(ADC_CHAN_MIC);
+    adc_select_input(ADC_CHAN_AUX);
     adc_set_clkdiv(1089); 
     
     //LCD init
     InitializeDisplay(BACKGROUND);  
-
-   
+ 
 
     //test purpose sine generation
     for (int i = 0; i < N_ADC_SAMPLES; i++) {
-        float32_t f = sin((2 * PI * 4000) / 44100 * i);  
+        float32_t f = sin((2 * PI * 4000*i)/ 44100);  
         arm_float_to_q15(&f, &input_q15[i], 1);
     }
 
@@ -164,28 +164,38 @@ int main()
             uint64_t stop_adc_conversion = time_us_64();
             diff_adc = stop_adc_conversion - start_adc_conversion;
             //start fft
-            arm_mult_q15(hanning_window_q15,sample_buf,processed_window_q15, N_ADC_SAMPLES);
-            arm_shift_q15(processed_window_q15,1,processed_window_q15,N_ADC_SAMPLES); //magintude correction (*2) becouse of hann window
-            
-            status = arm_rfft_init_q15(&fft_instance, 512 /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
+            //arm_mult_q15(hanning_window_q15,input_q15,processed_window_q15, N_ADC_SAMPLES); //test sine
+            arm_mult_q15(hanning_window_q15,sample_buf,processed_window_q15, N_ADC_SAMPLES); //real adc
+            //arm_shift_q15(processed_window_q15,1,processed_window_q15,N_ADC_SAMPLES); //magintude correction (*2) becouse of hann window -> dont use it as it saturates
+        
+            status = arm_rfft_init_q15(&fft_instance, FFT_SIZE /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
             arm_rfft_q15(&fft_instance, processed_window_q15, output); //hann window
-            //arm_rfft_q15(&fft_instance, sample_buf, output); //without hanno window
-            arm_cmplx_mag_q15(output, output, FFT_SIZE/2);
+            //arm_rfft_q15(&fft_instance, sample_buf, output); //without hann window
+            arm_cmplx_mag_q15(output, fft_bins, FFT_SIZE/2); //from Q1.15 to Q2.14
             
-            for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars
+           /* for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars
             {
                 uint16_t sum = 0;
                 for (uint8_t j = 0; j < ((FFT_SIZE/2)/display_bar_number); j++) {
                     sum = sum + (uint16_t)output[i*((FFT_SIZE/2)/display_bar_number)+j];
                 }
-                display_bars[i] = sum/(FFT_SIZE/display_bar_number);  
+                display_bars[i] = ((sum/((FFT_SIZE/2)/display_bar_number))*100)/0xff;  //*2 zaradi oknjenja, *4 zaradi same knjižnice od arm = *8
+                //display_bars[i] = ((sum/((FFT_SIZE/2)/display_bar_number))*100*8)/0x7fff;  //*2 zaradi oknjenja, *4 zaradi same knjižnice od arm = *8 
+            }*/
+            for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars
+            {
+                           
+                display_bars[i] = ((uint16_t)fft_bins[i]*100)/0xff;
+                
             }
 
+            //arm_vlog_q15((q15_t)display_bars,(q15_t)display_bars,256);
             uint64_t start_bars_calc = time_us_64();
 
             for (int j = 0;j < display_bar_number; j++)
             {                
-                percent = (display_bars[j]*100)/256;                
+                percent = (display_bars[j]);// *100)/0x7fff;         
+              
                 /*float log_x = log10((float)(j + 1));  // Avoid log(0) by adding 1
                 int log_scaled_x = (int)((log_x / log10(display_bar_number + 1)) * 256);  // Scale to screen width
                 int dynamic_width = (int)((log_scaled_x / 256.0) * 20);
@@ -197,8 +207,8 @@ int main()
                            
                 }
                 percent_max = (display_bars_max[j]*100)/256;
-                //GFX_drawFastHLine(log_scaled_x,219-(220*percent_max)/100,dynamic_width,max_hold_colour);
-                GFX_drawFastHLine(j*(256/display_bar_number),219-(220*percent_max)/100,(256/display_bar_number),max_hold_colour);
+                //GFX_drawFastHLine(log_scaled_x,219-(220*percent_max)/100,dynamic_width,max_hold_colour); log
+                //GFX_drawFastHLine(j*(256/display_bar_number),219-(220*percent_max)/100,(256/display_bar_number),max_hold_colour);
                 if (decay<=2)
                 {
                     decay = 0;
@@ -414,13 +424,12 @@ void color_coding(char c,uint32_t *setting)
 
 void hanning_window_init_q15(q15_t* hanning_window_q15, size_t size) {
     for (size_t i = 0; i < size; i++) {
-      // calculate the Hanning Window value for i as a float32_t
-      float32_t f = 0.5 * (1.0 - arm_cos_f32(2 * PI * i / size ));
-  
-      // convert value for index i from float32_t to q15_t and store
-      // in window at position i
-      
-      arm_float_to_q15(&f, &hanning_window_q15[i], 1);
+        // calculate the Hanning Window value for i as a float32_t
+        float32_t f = 0.5 * (1.0 - arm_cos_f32(2 * PI * i / size ));
+        // convert value for index i from float32_t to q15_t and store
+        // in window at position i
+        
+        arm_float_to_q15(&f, &hanning_window_q15[i], 1);
     }
 }
 
