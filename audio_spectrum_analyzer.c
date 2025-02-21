@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+//#pragma GCC optimize ("O0") //define only if debbuging
 #define ARM_MATH_CM0PLUS
 
 //high level libs
@@ -38,13 +38,17 @@
 
 int16_t sample_buf[N_ADC_SAMPLES];
 
-uint16_t display_bars[256]; // bars displayed on LCD
-uint16_t display_bars_max[256];
-
+q15_t display_bars[256]; // bars displayed on LCD
+q15_t display_bars_max[256];
+static float log_table[10000];
+q15_t log_table_q15[10000];
 //hann window variables
 q15_t input_q15[N_ADC_SAMPLES];
 q15_t hanning_window_q15[N_ADC_SAMPLES];
 q15_t processed_window_q15[N_ADC_SAMPLES];
+//HP filter 
+static q15_t prev_input = 0;
+static q15_t prev_output = 0;
 
 //device "settings"
 static uint16_t display_bar_number  = 256;
@@ -69,6 +73,7 @@ arm_status status;
 uint32_t percent;
 uint8_t percent_max;
 uint8_t decay;
+
 volatile bool main_timer_fired = false; //sets the timer
 volatile bool lcd_dma_finished = true;
 
@@ -78,7 +83,6 @@ void color_coding(char c, uint32_t *setting);
 void InitializeDisplay(uint16_t color);
 void DisplayChartLines(uint16_t color);
 
-
 bool repeating_timer_callback(__unused struct repeating_timer *t) 
 {
     main_timer_fired = true;
@@ -86,6 +90,8 @@ bool repeating_timer_callback(__unused struct repeating_timer *t)
     //uint64_t start_adc_conversion1 = time_us_64();
     //printf("start of timer: %llu us\n", start_adc_conversion1);    
 }
+
+//ADC without HP filter
 /*
 void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count)
 {
@@ -96,12 +102,9 @@ void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t count)
     buf[i] = adc_fifo_get_blocking();
     adc_run(false);
     adc_fifo_drain();
-}*/
-
-
-static q15_t prev_input = 0;
-static q15_t prev_output = 0;
-
+}
+*/   
+//ADC with HP filter
 void __not_in_flash_func(adc_capture)(int16_t *buf, size_t count) {
     adc_fifo_setup(true, false, 0, false, false);
     adc_run(true);
@@ -122,12 +125,12 @@ void __not_in_flash_func(adc_capture)(int16_t *buf, size_t count) {
         prev_output = buf[i];
     }
 }
+    
 void dma_handler()
 {
     lcd_dma_finished = true; 
     ILI9341_DeSelect();
     dma_hw->ints0 = 1u << dma_tx;
-    //dma_channel_start(dma_tx);
 }
 int main()
 {   
@@ -140,13 +143,17 @@ int main()
     //LCD init
     InitializeDisplay(BACKGROUND);  
  
-
     //test purpose sine generation
     for (int i = 0; i < N_ADC_SAMPLES; i++) {
         float32_t f = sin((2 * PI * 4000*i)/ 44100);  
         arm_float_to_q15(&f, &input_q15[i], 1);
     }
-
+    //build table for log scale
+    for (uint16_t i= 1; i < 10000;i++)
+    {
+        log_table[i]=20*log10f(i)/100;
+    }
+    arm_float_to_q15(log_table,log_table_q15,10000);
     //Hann window generation - only preformed once
     hanning_window_init_q15(hanning_window_q15, N_ADC_SAMPLES);
     //timer 
@@ -158,22 +165,30 @@ int main()
     {        
         if(main_timer_fired)
         {   
-            
             uint64_t start_adc_conversion = time_us_64();
             adc_capture(sample_buf, N_ADC_SAMPLES);
             uint64_t stop_adc_conversion = time_us_64();
             diff_adc = stop_adc_conversion - start_adc_conversion;
-            //start fft
+            //test sine generation
+            /*
+            for (int i = 0; i < N_ADC_SAMPLES; i++) {
+                float32_t f = sin((2 * PI * 4000*i)/ 44100);  
+                arm_float_to_q15(&f, &input_q15[i], 1);
+            }
+            */
+
             //arm_mult_q15(hanning_window_q15,input_q15,processed_window_q15, N_ADC_SAMPLES); //test sine
             arm_mult_q15(hanning_window_q15,sample_buf,processed_window_q15, N_ADC_SAMPLES); //real adc
             //arm_shift_q15(processed_window_q15,1,processed_window_q15,N_ADC_SAMPLES); //magintude correction (*2) becouse of hann window -> dont use it as it saturates
         
             status = arm_rfft_init_q15(&fft_instance, FFT_SIZE /*bin count*/, 0 /*forward FFT*/, 1 /*output bit order is normal*/);
             arm_rfft_q15(&fft_instance, processed_window_q15, output); //hann window
-            //arm_rfft_q15(&fft_instance, sample_buf, output); //without hann window
+            //arm_rfft_q15(&fft_instance, sample_buf, output); //without hann window, adc
+            //arm_rfft_q15(&fft_instance, input_q15, output); //without hann window, test sine
             arm_cmplx_mag_q15(output, fft_bins, FFT_SIZE/2); //from Q1.15 to Q2.14
             
-           /* for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars
+           /* // Calculate bars on display -> 256 samples bars, if fewer bars, do averaging
+           for (uint16_t i = 0; i <= display_bar_number-1; i++) 
             {
                 uint16_t sum = 0;
                 for (uint8_t j = 0; j < ((FFT_SIZE/2)/display_bar_number); j++) {
@@ -181,39 +196,48 @@ int main()
                 }
                 display_bars[i] = ((sum/((FFT_SIZE/2)/display_bar_number))*100)/0xff;  //*2 zaradi oknjenja, *4 zaradi same knjižnice od arm = *8
                 //display_bars[i] = ((sum/((FFT_SIZE/2)/display_bar_number))*100*8)/0x7fff;  //*2 zaradi oknjenja, *4 zaradi same knjižnice od arm = *8 
-            }*/
-            for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars
+            }
+            */
+            for (uint16_t i = 0; i <= display_bar_number-1; i++) // Calculate bars on display -> 256 samples bars, if fewer bars, take max bar
             {
-                           
-                display_bars[i] = ((uint16_t)fft_bins[i]*100)/0xff;
-                
+                uint16_t max_bar = 0;
+                for (uint16_t j = 0; j < ((FFT_SIZE/2)/display_bar_number); j++) {
+                    if (max_bar < fft_bins[i*(FFT_SIZE/2)/display_bar_number+j])
+                    {
+                        //max_bar = fft_bins[i*(FFT_SIZE/2)/display_bar_number+j]; //lin
+                        max_bar = log_table_q15[fft_bins[i*(FFT_SIZE/2)/display_bar_number+j]]; //log
+                    }                   
+                }
+
+                display_bars[i] = max_bar * 255;//lin
+                display_bars[i] = max_bar;      //log
+                /*SCALE factor :
+                255 if ADC and song play
+                10  if ADC and real sine
+                7   in test sine (no ADC)*/
             }
 
-            //arm_vlog_q15((q15_t)display_bars,(q15_t)display_bars,256);
             uint64_t start_bars_calc = time_us_64();
 
-            for (int j = 0;j < display_bar_number; j++)
+            for (uint16_t i = 0;i <= display_bar_number-1; i++)
             {                
-                percent = (display_bars[j]);// *100)/0x7fff;         
-              
-                /*float log_x = log10((float)(j + 1));  // Avoid log(0) by adding 1
-                int log_scaled_x = (int)((log_x / log10(display_bar_number + 1)) * 256);  // Scale to screen width
-                int dynamic_width = (int)((log_scaled_x / 256.0) * 20);
-                GFX_soundbar(log_scaled_x,220,dynamic_width,220,bar_colour,back_colour,percent); */    
-                GFX_soundbar(j*(256/display_bar_number),220,(256/display_bar_number),220,bar_colour,back_colour,percent);     
-                if(display_bars_max[j] < display_bars[j])
+                percent = (display_bars[i]*100)/0x7fff;       
+                if (percent<0)
                 {
-                    display_bars_max[j]=display_bars[j];
-                           
+                    percent = 0;
                 }
-                percent_max = (display_bars_max[j]*100)/256;
-                //GFX_drawFastHLine(log_scaled_x,219-(220*percent_max)/100,dynamic_width,max_hold_colour); log
-                //GFX_drawFastHLine(j*(256/display_bar_number),219-(220*percent_max)/100,(256/display_bar_number),max_hold_colour);
+                 GFX_soundbar(i*(256/display_bar_number),220,(256/display_bar_number),220,bar_colour,back_colour,percent);     
+                if(display_bars_max[i] < display_bars[i])
+                {
+                    display_bars_max[i]=display_bars[i];   
+                }
+                percent_max = (display_bars_max[i]*100)/0x7fff;       
+                GFX_drawFastHLine(i*(256/display_bar_number),219-(220*percent_max)/100,(256/display_bar_number),max_hold_colour);
                 if (decay<=2)
                 {
                     decay = 0;
-                        if (display_bars_max[j]>0)
-                        display_bars_max[j]--;                                              
+                        if (display_bars_max[i]>0)
+                        display_bars_max[i] -= 255;                                              
                 }
             }
            
@@ -267,6 +291,7 @@ int main()
                         display_bar_number = 1 << (c-'1');
                         printf("Frekvencni spekter bo prikazovalo: %d stolpcev\n", display_bar_number);
                         memset(display_bars_max, 0, sizeof(display_bars_max));
+                        memset(display_bars, 0, sizeof(display_bars));
                         GFX_clearScreen();
                         DisplayChartLines(ILI9341_BLACK);
                         GFX_flush(); 
