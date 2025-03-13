@@ -27,7 +27,7 @@
 #define ADC_CHAN_AUX 2
 //IIR HP filter
 #define ALPHA_Q15 0x7F5C  // 0.995 in Q1.15 format
-#define BANDWIDTH_FACTOR 4 //2 for 20khz, 4 for 10khz
+#define BANDWIDTH_FACTOR 2//2 for 20khz, 4 for 10khz
 #define FFT_SIZE 1024
 #define N_ADC_SAMPLES 1024
 #define ADCCLK 48000000.0
@@ -35,7 +35,7 @@
 //timer config
 #define ALARM_NUM 0
 #define ALARM_IRQ timer_hardware_alarm_get_irq_num(timer_hw, ALARM_NUM)
-#define PERIOD -70
+#define PERIOD -60
 
 int16_t sample_buf[N_ADC_SAMPLES];
 
@@ -59,8 +59,8 @@ static uint8_t  ext_input           = 1;
 static uint16_t display_bar_number  = 256;
 static uint32_t bar_colour          = ILI9341_WHITE;
 static uint32_t back_colour         = ILI9341_MAGENTA;
-static uint32_t max_hold_colour     = ILI9341_GREEN;
-
+static uint32_t max_hold_colour     = ILI9341_BLACK;
+static bool cold_start = 0;
 //time profiling
 static uint64_t diff_adc        =0;
 static uint64_t diff_bars_calc  =0;
@@ -165,12 +165,12 @@ int main()
     hanning_window_init_q15(hanning_window_q15, N_ADC_SAMPLES);
     //timer 
     struct repeating_timer timer;
-    // add_repeating_timer_ms(PERIOD, repeating_timer_callback, NULL, &timer); 
+    add_repeating_timer_ms(PERIOD, repeating_timer_callback, NULL, &timer); 
 
     
     while (true) 
     {        
-        if(main_timer_fired=1)
+        if(main_timer_fired==1)
         {   
             uint64_t start_adc_conversion = time_us_64();
             adc_capture(sample_buf, N_ADC_SAMPLES);
@@ -327,22 +327,28 @@ int main()
             }
             //printf("\033[2J"); // Clear entire screen
             //printf("\033[H");  // Move cursor to top-left
-            //printf("ADC time:   %llu us\nfft_time %llu\nflush time: %llu us\nbar calc time: %llu us\nperiod %llu us\n\n", diff_adc,diff_fft,diff_flush,diff_bars_calc,time_period);
+            printf("ADC time:   %llu us\nfft_time %llu\nflush time: %llu us\nbar calc time: %llu us\nperiod %llu us\n\n", diff_adc,diff_fft,diff_flush,diff_bars_calc,time_period);
             main_timer_fired = false;
         }
         if (tud_cdc_available()) 
         {
+            
+            
             char c = getchar();
             char d = '0';
             printf("%c\n", c); 
             switch (c) 
             {   
                 case 'a':
+                    printf("\033[2J"); // Clear entire screen
+                    printf("\033[H");  // Move cursor to top-left
                     printf("Akusticni spektralni analizator, narejen pri predmetu Akustika na Fakulteti za elektrotehniko.\n");
                     printf("v0.9, 13.2.2025 \nKrištof Frelih\n");
                 break;
 
                 case 'b':
+                    printf("\033[2J"); // Clear entire screen
+                    printf("\033[H");  // Move cursor to top-left
                     printf("Izberi usrezno stevilo stolpcev\n");
                     printf( "2\t->\t2\n"
                             "4\t->\t3\n"
@@ -372,6 +378,8 @@ int main()
                 break; 
 
                 case 'c':
+                    printf("\033[2J"); // Clear entire screen
+                    printf("\033[H");  // Move cursor to top-left
                     printf("Nastavi barvno okolje:\n");
                     printf("barvna koda:\n"
                             "BLACK\t->\t0\n"
@@ -430,6 +438,8 @@ int main()
                 break;
 
                 case 'i':
+                    printf("\033[2J"); // Clear entire screen
+                    printf("\033[H");  // Move cursor to top-left
                     printf("Izberi input:\n");
                     printf("0\t->\ttestni sinus\n"
                            "1\t->\tmikrofon\n"
@@ -447,9 +457,11 @@ int main()
                 break;
 
                 case 's':
+                    printf("\033[2J"); // Clear entire screen
+                    printf("\033[H");  // Move cursor to top-left
                     printf("Izberi tip Y skale:\n");
                     printf("0\t->\tlinearna Y skala\n"
-                           "1\t->\tlogaritemskainearna Y skala\n");                   
+                           "1\t->\tlogaritemska Y skala\n");                   
                     c = getchar();
                     printf("%c\n", c);      
                     if(c < '2' && c >'/')   

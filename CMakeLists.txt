@@ -19,6 +19,7 @@ set(sdkVersion 2.1.0)
 set(toolchainVersion 13_3_Rel1)
 set(picotoolVersion 2.1.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+set(PICO_DEFAULT_FLOAT_IMPL pico_float_pico)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
@@ -67,6 +68,6 @@ target_link_libraries(audio_spectrum_analyzer
         gfx
         ${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/build/bin_dsp/libCMSISDSP.a 
         )
-
+add_compile_definitions(PICO_DEOPTIMIZED_DEBUG=1)
 pico_add_extra_outputs(audio_spectrum_analyzer)
 
