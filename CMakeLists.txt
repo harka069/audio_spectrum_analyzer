@@ -38,7 +38,7 @@ pico_sdk_init()
 add_executable(audio_spectrum_analyzer audio_spectrum_analyzer.c )
 
 pico_set_program_name(audio_spectrum_analyzer "audio_spectrum_analyzer")
-pico_set_program_version(audio_spectrum_analyzer "0.1")
+pico_set_program_version(audio_spectrum_analyzer "0.9")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(audio_spectrum_analyzer 0)
@@ -46,12 +46,14 @@ pico_enable_stdio_usb(audio_spectrum_analyzer 1)
 add_subdirectory(lib/ili9341)
 add_subdirectory(lib/gfx)
 
+
 # Add the standard library to the build
 target_link_libraries(audio_spectrum_analyzer
         pico_stdlib)
 
 # Add the standard include files to the build
 target_include_directories(audio_spectrum_analyzer PRIVATE
+${CMAKE_CURRENT_LIST_DIR}/lib
 ${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/CMSIS-DSP/Include
 ${CMAKE_CURRENT_LIST_DIR}/../CMSISDSP/CMSIS_6/CMSIS/Core/Include
 )
