@@ -70,6 +70,8 @@ xf = np.fft.rfftfreq(len(audio_samples_q15), d=1./44100)
 # Take the absolute value
 fft_bins_1_q15 = arm_cmplx_mag_q15(rfft_1_q15)[:512 // 2 + 1]
 fft_bins_1_q15=arm_vlog_q15(fft_bins_1_q15)
+# Rotate the first bit of fft_bins_1_q15
+fft_bins_1_q15 +=min(fft_bins_1_q15)
 plt.plot(fft_bins_1_q15)
 plt.xlabel('Sample Index')
 plt.ylabel('fft')

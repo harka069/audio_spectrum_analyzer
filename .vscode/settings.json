@@ -39,7 +39,10 @@
     "files.associations": {
         "compare": "c",
         "cstdint": "c",
-        "cstdarg": "cpp"
+        "cstdarg": "cpp",
+        "cmath": "cpp",
+        "*.tcc": "cpp",
+        "math.h": "c"
     },
-    "cortex-debug.variableUseNaturalFormat": false
+    "cortex-debug.variableUseNaturalFormat": true
 }
